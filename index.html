@@ -3,9 +3,345 @@
 <head>
   <meta charset="utf-8" />
   <title>HMDA Explorer — Lender First</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root { --max: 1200px; }
+    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; color: #0f172a; background:#f8fafc; }
+    header { background:#0b4; color:white; padding:16px 20px; }
+    header h1 { margin:0; font-size:20px; }
+    main { max-width: var(--max); margin: 24px auto; padding: 0 16px 48px; }
+    .card { background:white; border:1px solid #e2e8f0; border-radius:12px; padding:16px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+    .row { display:flex; gap:12px; flex-wrap: wrap; align-items:end; }
+    label { display:block; font-size:12px; color:#475569; margin-bottom:6px; }
+    select, input, button { height:40px; border-radius:10px; border:1px solid #cbd5e1; padding:0 10px; background:white; }
+    button { cursor:pointer; }
+    button.primary { background:#0b4; color:white; border:0; }
+    button.ghost { background:white; }
+    .grid { display:grid; gap:12px; grid-template-columns: repeat(auto-fit, minmax(240px,1fr)); margin-top:12px; }
+    .stat { border:1px solid #e2e8f0; border-radius:12px; padding:12px; background:#fbfdff; }
+    .stat h3 { margin:0 0 4px; font-size:13px; color:#475569; }
+    .stat div { font-size:22px; font-weight:700; }
+    .muted { color:#64748b; }
+    table { width:100%; border-collapse: collapse; margin-top: 8px; }
+    th, td { text-align:left; padding:8px 10px; border-bottom:1px solid #e2e8f0; font-size:14px; }
+    th { font-weight:600; color:#475569; background:#f8fafc; }
+    .footer-note { font-size:12px; color:#64748b; margin-top:12px; }
+    .notice { font-size:13px; color:#334155; background:#ecfeff; border:1px solid #bae6fd; padding:10px 12px; border-radius:10px; }
+    .spacer { height: 10px; }
+    .loading { animation: pulse 1.2s infinite; opacity:.75; }
+    @keyframes pulse { 0%{opacity:.6} 50%{opacity:1} 100%{opacity:.6} }
+    .chip { display:inline-block; padding:4px 8px; border-radius:999px; border:1px solid #cbd5e1; font-size:12px; margin-left:6px; }
+  </style>
 </head>
 <body>
-  <h1>HMDA Explorer</h1>
-  <p>This is a placeholder for the lender-first HMDA explorer HTML page.</p>
+  <header>
+    <h1>HMDA Explorer — Select Lender First</h1>
+  </header>
+  <main>
+    <div class="card">
+      <div class="row">
+        <div>
+          <label for="year">Filing year</label>
+          <select id="year">
+            <option value="2024" selected>2024</option>
+            <option value="2023">2023</option>
+            <option value="2022">2022</option>
+            <option value="2021">2021</option>
+            <option value="2020">2020</option>
+            <option value="2019">2019</option>
+            <option value="2018">2018</option>
+          </select>
+        </div>
+
+        <div style="min-width:320px; flex:1">
+          <label for="lender">Lender (alphabetical)</label>
+          <select id="lender" disabled>
+            <option>Loading lenders…</option>
+          </select>
+        </div>
+
+        <div>
+          <button id="loadBtn" class="primary" disabled>Load summary</button>
+        </div>
+      </div>
+
+      <div class="spacer"></div>
+      <div id="lenderMeta" class="muted"></div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <div id="results" class="card" style="display:none">
+      <div id="summaryTop" class="grid"></div>
+      <div class="spacer"></div>
+
+      <div class="grid">
+        <div class="stat">
+          <h3>Actions taken</h3>
+          <div id="actionsTotal" class="muted"></div>
+          <table id="actionsTable">
+            <thead><tr><th>Action</th><th>Count</th><th>% of total</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="stat">
+          <h3>Loan types</h3>
+          <div id="typesTotal" class="muted"></div>
+          <table id="typesTable">
+            <thead><tr><th>Loan type</th><th>Count</th><th>% of total</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="stat">
+          <h3>Loan purposes</h3>
+          <div id="purposesTotal" class="muted"></div>
+          <table id="purposesTable">
+            <thead><tr><th>Purpose</th><th>Count</th><th>% of total</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="spacer"></div>
+
+      <div class="row">
+        <div class="notice">
+          Summaries are calculated client-side from the lender’s HMDA LAR CSV for the selected year (loan_amount averaged on originated loans only).
+        </div>
+        <div style="flex:1"></div>
+        <button id="downloadBtn" class="ghost">Download summary CSV</button>
+      </div>
+
+      <div class="footer-note">
+        Source: HMDA Institutions API & Data Browser API.
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const els = {
+      year: document.getElementById('year'),
+      lender: document.getElementById('lender'),
+      loadBtn: document.getElementById('loadBtn'),
+      lenderMeta: document.getElementById('lenderMeta'),
+      results: document.getElementById('results'),
+      summaryTop: document.getElementById('summaryTop'),
+      actionsTable: document.querySelector('#actionsTable tbody'),
+      typesTable: document.querySelector('#typesTable tbody'),
+      purposesTable: document.querySelector('#purposesTable tbody'),
+      actionsTotal: document.getElementById('actionsTotal'),
+      typesTotal: document.getElementById('typesTotal'),
+      purposesTotal: document.getElementById('purposesTotal'),
+      downloadBtn: document.getElementById('downloadBtn'),
+    };
+
+    const actionLabels = {
+      1: "Originated",
+      2: "Approved, not accepted",
+      3: "Denied",
+      4: "Withdrawn by applicant",
+      5: "File closed for incompleteness",
+      6: "Purchased loan",
+      7: "Preapproval denied",
+      8: "Preapproval approved, not accepted"
+    };
+    const loanTypeLabels = {
+      1: "Conventional",
+      2: "FHA",
+      3: "VA",
+      4: "USDA/RHS/FSA"
+    };
+    const loanPurposeLabels = {
+      1: "Home purchase",
+      2: "Home improvement",
+      31: "Refinance",
+      32: "Cash-out refinance",
+      4: "Other purpose",
+      5: "Not applicable"
+    };
+
+    function parseCSV(text) {
+      const lines = text.trim().split(/\r?\n/);
+      const headers = lines.shift().split(',');
+      const rows = lines.map(line => {
+        const cells = [];
+        let cur = '', inQ = false;
+        for (let i=0; i<line.length; i++) {
+          const c = line[i];
+          if (c === '"') {
+            if (inQ && line[i+1] === '"') { cur += '"'; i++; }
+            else inQ = !inQ;
+          } else if (c === ',' && !inQ) {
+            cells.push(cur); cur = '';
+          } else {
+            cur += c;
+          }
+        }
+        cells.push(cur);
+        const obj = {};
+        headers.forEach((h, idx) => obj[h] = cells[idx]);
+        return obj;
+      });
+      return { headers, rows };
+    }
+
+    const toFloat = v => {
+      const n = parseFloat(v);
+      return Number.isFinite(n) ? n : NaN;
+    };
+    const fmt = new Intl.NumberFormat('en-US');
+    const money = v => (isNaN(v) ? "—" : "$" + fmt.format(Math.round(v)));
+
+    function downloadCSV(name, rows) {
+      const headers = Object.keys(rows[0] || {});
+      const body = rows.map(r => headers.map(h => {
+        const cell = r[h] ?? '';
+        const needsQuote = /[",\n]/.test(String(cell));
+        return needsQuote ? '"' + String(cell).replace(/"/g, '""') + '"' : cell;
+      }).join(','));
+      const csv = [headers.join(','), ...body].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+
+    async function loadFilers(year) {
+      els.lender.innerHTML = `<option>Loading lenders…</option>`;
+      els.lender.disabled = true;
+      els.loadBtn.disabled = true;
+      els.lender.classList.add('loading');
+
+      const url = `https://ffiec.cfpb.gov/v2/reporting/filers/${year}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Failed to load filers (${res.status})`);
+      const json = await res.json();
+
+      const list = (json.institutions || [])
+        .map(x => ({ lei: x.lei, name: String(x.name || '').trim() }))
+        .filter(x => x.lei && x.name)
+        .sort((a,b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }));
+
+      els.lender.innerHTML = `<option value="">— Select a lender —</option>` +
+        list.map(x => `<option value="${x.lei}">${x.name}</option>`).join('');
+      els.lender.disabled = false;
+      els.loadBtn.disabled = false;
+      els.lender.dataset.filers = JSON.stringify(list);
+      els.lender.classList.remove('loading');
+    }
+
+    async function loadSummary(lei, year) {
+      els.results.style.display = 'none';
+      els.summaryTop.innerHTML = '';
+      els.actionsTable.innerHTML = '';
+      els.typesTable.innerHTML = '';
+      els.purposesTable.innerHTML = '';
+      els.lenderMeta.textContent = 'Fetching HMDA LAR CSV and computing summary…';
+      els.lenderMeta.classList.add('loading');
+
+      const url = `https://ffiec.cfpb.gov/v2/data-browser-api/view/csv?years=${year}&leis=${encodeURIComponent(lei)}&loan_types=1,2,3,4`;
+
+      const resp = await fetch(url, { redirect: 'follow' });
+      if (!resp.ok) throw new Error(`Failed to fetch LAR CSV (${resp.status})`);
+      const text = await resp.text();
+      const { rows } = parseCSV(text);
+
+      const total = rows.length;
+      const sumBy = (map, key) => (map[key] = (map[key] || 0) + 1, map);
+      const actions = rows.reduce((m, r) => sumBy(m, r.action_taken), {});
+      const types   = rows.reduce((m, r) => sumBy(m, r.loan_type), {});
+      const purposes= rows.reduce((m, r) => sumBy(m, r.loan_purpose), {});
+
+      let amtSum = 0, amtN = 0;
+      for (const r of rows) {
+        if (r.action_taken === '1') {
+          const v = toFloat(r.loan_amount);
+          if (!isNaN(v)) { amtSum += v; amtN++; }
+        }
+      }
+      const avgAmt = amtN ? (amtSum / amtN) : NaN;
+
+      let lenderName = lei;
+      try {
+        const list = JSON.parse(els.lender.dataset.filers || '[]');
+        const found = list.find(x => x.lei === lei);
+        if (found) lenderName = found.name + ' (' + lei + ')';
+      } catch {}
+
+      els.summaryTop.innerHTML = `
+        <div class="stat"><h3>Lender</h3><div>${lenderName}</div></div>
+        <div class="stat"><h3>Filing year</h3><div>${year}</div></div>
+        <div class="stat"><h3>Total LAR rows</h3><div>${fmt.format(total)}</div></div>
+        <div class="stat"><h3>Avg loan amount (originations)</h3><div>${money(avgAmt)}</div></div>
+        <div class="stat"><h3>Originations (count)</h3><div>${fmt.format(actions['1'] || 0)}</div></div>
+        <div class="stat"><h3>Denials (count)</h3><div>${fmt.format(actions['3'] || 0)}</div></div>
+      `;
+
+      function renderTable(map, labels, tbody, totalRows, totalLabelEl) {
+        const entries = Object.entries(map)
+          .filter(([k]) => k && k !== 'undefined')
+          .map(([k, v]) => ({ code: k, name: labels[k] || `Code ${k}`, count: v }))
+          .sort((a,b) => b.count - a.count);
+        totalLabelEl.textContent = fmt.format(totalRows) + ' records';
+        tbody.innerHTML = entries.map(e => `
+          <tr><td>${e.name}${labels[e.code] ? '' : ` <span class="chip">code ${e.code}</span>`}</td>
+              <td>${fmt.format(e.count)}</td>
+              <td>${(100*e.count/totalRows).toFixed(1)}%</td></tr>`).join('') || 
+              `<tr><td colspan="3" class="muted">No data</td></tr>`;
+      }
+
+      renderTable(actions,  actionLabels,  els.actionsTable,  total, els.actionsTotal);
+      renderTable(types,    loanTypeLabels,els.typesTable,    total, els.typesTotal);
+      renderTable(purposes, loanPurposeLabels, els.purposesTable, total, els.purposesTotal);
+
+      els.downloadBtn.onclick = () => {
+        const flat = [];
+        flat.push({ metric: 'Lender', value: lenderName });
+        flat.push({ metric: 'Year', value: year });
+        flat.push({ metric: 'Total LAR rows', value: total });
+        flat.push({ metric: 'Avg loan amount (originations)', value: isNaN(avgAmt) ? '' : Math.round(avgAmt) });
+        flat.push({ metric: 'Originations (count)', value: actions['1'] || 0 });
+        flat.push({ metric: 'Denials (count)', value: actions['3'] || 0 });
+        flat.push({});
+        flat.push({ metric: '--- Actions taken ---', value: '' });
+        Object.entries(actions).forEach(([k,v]) => flat.push({ metric: actionLabels[k] || `Code ${k}`, value: v }));
+        flat.push({});
+        flat.push({ metric: '--- Loan types ---', value: '' });
+        Object.entries(types).forEach(([k,v]) => flat.push({ metric: loanTypeLabels[k] || `Code ${k}`, value: v }));
+        flat.push({});
+        flat.push({ metric: '--- Loan purposes ---', value: '' });
+        Object.entries(purposes).forEach(([k,v]) => flat.push({ metric: loanPurposeLabels[k] || `Code ${k}`, value: v }));
+        downloadCSV(`hmda-summary-${lei}-${year}.csv`, flat);
+      };
+
+      els.lenderMeta.textContent = `Loaded ${fmt.format(total)} rows.`;
+      els.lenderMeta.classList.remove('loading');
+      els.results.style.display = '';
+    }
+
+    els.year.addEventListener('change', () => loadFilers(els.year.value));
+    els.lender.addEventListener('change', () => {
+      const lei = els.lender.value;
+      els.lenderMeta.textContent = lei ? `Selected LEI: ${lei}` : '';
+    });
+    els.loadBtn.addEventListener('click', () => {
+      const lei = els.lender.value;
+      const yr = els.year.value;
+      if (!lei) { alert('Please select a lender.'); return; }
+      loadSummary(lei, yr).catch(err => {
+        console.error(err);
+        els.lenderMeta.textContent = 'Error: ' + err.message;
+        els.lenderMeta.classList.remove('loading');
+      });
+    });
+
+    loadFilers(els.year.value).catch(err => {
+      console.error(err);
+      els.lender.innerHTML = `<option>Error loading lenders</option>`;
+    });
+  </script>
 </body>
 </html>
